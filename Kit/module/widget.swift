@@ -28,6 +28,7 @@ public enum widget_t: String {
     case state = "state"
     case text = "text"
     case icon = "icon"
+    case liveFan = "live_fan"
     
     public func new(module: String, config: NSDictionary, defaultWidget: widget_t, icon: NSImage? = nil) -> SWidget? {
         guard let widgetConfig: NSDictionary = config[self.rawValue] as? NSDictionary else { return nil }
@@ -83,6 +84,11 @@ public enum widget_t: String {
             preview = IconWidget(title: module, icon: icon, preview: true)
             item = IconWidget(title: module, icon: icon, preview: false)
             image = icon?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)) ?? icon
+        case .liveFan:
+            preview = LiveFanWidget(title: module, preview: true)
+            item = LiveFanWidget(title: module, preview: false)
+            let fanIcon = NSImage(systemSymbolName: "fan.fill", accessibilityDescription: nil)
+            image = fanIcon?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)) ?? fanIcon
         default: break
         }
         
@@ -148,6 +154,7 @@ public enum widget_t: String {
         case .state: return localizedString("State widget")
         case .text: return localizedString("Text widget")
         case .icon: return localizedString("Icon widget")
+        case .liveFan: return localizedString("Live Fan widget")
         default: return ""
         }
     }

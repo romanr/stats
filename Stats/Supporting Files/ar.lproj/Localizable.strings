@@ -236,6 +236,7 @@
 "Constant color" = "ثابت"; // translategemma:4b
 "Custom..." = "مخصص...";
 "Icon widget" = "أداة الأيقونة";
+"Live Fan widget" = "Live Fan";
 
 // Module Kit
 "Open module settings" = "فتح إعدادات الوحدة";

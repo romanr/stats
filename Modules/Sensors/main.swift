@@ -149,6 +149,10 @@ public class Sensors: Module {
                     }
                 }
                 widget.setValue(flatList)
+            case let widget as LiveFanWidget:
+                let fastestFan = (value.sensors.first(where: { $0.key == "Fastest fan" }) as? Fan)
+                    ?? value.sensors.compactMap({ $0 as? Fan }).filter({ !$0.isComputed }).max(by: { $0.value < $1.value })
+                widget.setValue(fastestFan?.percentage ?? 0)
             default: break
             }
         }

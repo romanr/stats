@@ -398,6 +398,7 @@ private class WidgetSelectorView: NSStackView {
                 let widget = widgets[i]
                 let preview = WidgetPreview(
                     id: "\(widget.module)_\(widget.type)",
+                    module: widget.module,
                     type: widget.type,
                     image: widget.image,
                     isActive: widget.isActive, { [weak self] state in
@@ -484,18 +485,41 @@ private class WidgetSelectorView: NSStackView {
         }
         
         let view = self.views[targetIdx]
-        let copy = ViewCopy(view)
-        copy.zPosition = 2
-        copy.transform = CATransform3DMakeScale(0.9, 0.9, 1)
+        let isLiveFan = (view as? WidgetPreview)?.isLiveFan ?? false
+        (view as? WidgetPreview)?.interactPreview()
         
-        // hide the original view, show the copy
-        view.subviews.forEach({ $0.isHidden = true })
-        self.layer?.addSublayer(copy)
+        var copy: ViewCopy? = nil
+        if isLiveFan, let layer = view.layer {
+            let centerOffset = CGPoint(x: view.bounds.midX * 0.1, y: view.bounds.midY * 0.1)
+            var transform = CATransform3DMakeTranslation(centerOffset.x, centerOffset.y, 0)
+            transform = CATransform3DScale(transform, 0.9, 0.9, 1)
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            layer.zPosition = 2
+            layer.transform = transform
+            CATransaction.commit()
+        } else {
+            let snapshot = ViewCopy(view)
+            snapshot.zPosition = 2
+            snapshot.transform = CATransform3DMakeScale(0.9, 0.9, 1)
+            view.subviews.forEach({ $0.isHidden = true })
+            self.layer?.addSublayer(snapshot)
+            copy = snapshot
+        }
         
-        // hide the copy view, show the original
+        // restore view / remove copy after tracking
         defer {
-            copy.removeFromSuperlayer()
-            view.subviews.forEach({ $0.isHidden = false })
+            if isLiveFan {
+                CATransaction.begin()
+                CATransaction.setDisableActions(true)
+                view.layer?.zPosition = 0
+                view.layer?.transform = CATransform3DIdentity
+                CATransaction.commit()
+                self.layoutSubtreeIfNeeded()
+            } else {
+                copy?.removeFromSuperlayer()
+                view.subviews.forEach({ $0.isHidden = false })
+            }
         }
         
         var newIdx = -1
@@ -515,7 +539,11 @@ private class WidgetSelectorView: NSStackView {
                 
                 CATransaction.begin()
                 CATransaction.setDisableActions(true)
-                copy.frame.origin.x = originX + diff
+                if isLiveFan {
+                    view.frame.origin.x = originX + diff
+                } else {
+                    copy?.frame.origin.x = originX + diff
+                }
                 CATransaction.commit()
                 
                 let reordered = self.views.map{
@@ -533,10 +561,22 @@ private class WidgetSelectorView: NSStackView {
                     view.removeFromSuperviewWithoutNeedingDisplay()
                     self.insertArrangedSubview(view, at: newIdx)
                     self.layoutSubtreeIfNeeded()
+                    if isLiveFan {
+                        let centerOffset = CGPoint(x: view.bounds.midX * 0.1, y: view.bounds.midY * 0.1)
+                        var transform = CATransform3DMakeTranslation(centerOffset.x, centerOffset.y, 0)
+                        transform = CATransform3DScale(transform, 0.9, 0.9, 1)
+                        CATransaction.begin()
+                        CATransaction.setDisableActions(true)
+                        view.layer?.zPosition = 2
+                        view.layer?.transform = transform
+                        view.frame.origin.x = originX + diff
+                        CATransaction.commit()
+                    }
                     
                     for (i, v) in self.views(in: .leading).compactMap({$0 as? WidgetPreview}).enumerated() {
                         v.position = i
                     }
+                    (view as? WidgetPreview)?.interactPreview()
                 }
                 self.moved = abs(diff) > 1
             } else {
@@ -562,7 +602,8 @@ private class WidgetPreview: NSStackView {
     
     private let rgbImage: NSImage
     private let grayImage: NSImage
-    private let imageView: NSImageView
+    private let imageView: NSImageView?
+    private let previewContent: NSView
     
     private var state: Bool
     private let id: String
@@ -572,13 +613,28 @@ private class WidgetPreview: NSStackView {
         set { Store.shared.set(key: "\(self.id)_position", value: newValue) }
     }
     
-    fileprivate init(id: String, type: widget_t, image: NSImage, isActive: Bool, _ callback: @escaping (_ status: Bool) -> Void) {
+    fileprivate init(id: String, module: String, type: widget_t, image: NSImage, isActive: Bool, _ callback: @escaping (_ status: Bool) -> Void) {
         self.id = id
         self.stateCallback = callback
         self.rgbImage = image
-        self.grayImage = type == .icon ? image : grayscaleImage(image) ?? image
-        self.imageView = NSImageView(frame: NSRect(origin: .zero, size: image.size))
+        self.grayImage = (type == .icon || type == .liveFan) ? image : grayscaleImage(image) ?? image
         self.state = isActive
+        
+        if type == .liveFan {
+            let fan = LiveFanWidget(title: module, preview: true)
+            fan.setTint(.black)
+            self.imageView = nil
+            self.previewContent = fan
+        } else {
+            let view = NSImageView(frame: NSRect(origin: .zero, size: image.size))
+            view.image = isActive ? self.rgbImage : self.grayImage
+            if type == .icon {
+                view.imageScaling = .scaleNone
+                view.contentTintColor = .black
+            }
+            self.imageView = view
+            self.previewContent = view
+        }
         
         super.init(frame: NSRect(x: 0, y: 0, width: 0, height: Constants.Widget.height))
         
@@ -597,20 +653,14 @@ private class WidgetPreview: NSStackView {
         self.alignment = .centerY
         self.spacing = 0
         
-        self.imageView.image = isActive ? self.rgbImage : self.grayImage
-        self.imageView.alphaValue = isActive ? 1 : 0.75
-        if type == .icon {
-            self.imageView.imageScaling = .scaleNone
-            self.imageView.contentTintColor = .black
-        }
-        
-        self.addArrangedSubview(self.imageView)
+        self.previewContent.alphaValue = isActive ? 1 : 0.75
+        self.addArrangedSubview(self.previewContent)
         
         self.addTrackingArea(NSTrackingArea(
             rect: NSRect(
                 x: Constants.Widget.spacing,
                 y: 0,
-                width: self.imageView.frame.width + Constants.Widget.spacing*2,
+                width: self.previewContent.frame.width + Constants.Widget.spacing*2,
                 height: self.frame.height
             ),
             options: [NSTrackingArea.Options.activeAlways, NSTrackingArea.Options.mouseEnteredAndExited, NSTrackingArea.Options.activeInActiveApp],
@@ -619,7 +669,7 @@ private class WidgetPreview: NSStackView {
         ))
         
         NSLayoutConstraint.activate([
-            self.widthAnchor.constraint(equalToConstant: self.imageView.frame.width + Constants.Widget.spacing*2),
+            self.widthAnchor.constraint(equalToConstant: self.previewContent.frame.width + Constants.Widget.spacing*2),
             self.heightAnchor.constraint(equalToConstant: self.frame.height)
         ])
     }
@@ -631,23 +681,37 @@ private class WidgetPreview: NSStackView {
     fileprivate func status(_ newState: Bool) {
         self.state = newState
         self.stateCallback(newState)
-        self.imageView.image = newState ? self.rgbImage : self.grayImage
-        self.imageView.alphaValue = newState ? 1 : 0.8
+        if let imageView = self.imageView {
+            imageView.image = newState ? self.rgbImage : self.grayImage
+        }
+        self.previewContent.alphaValue = newState ? 1 : 0.8
+    }
+    
+    fileprivate var isLiveFan: Bool {
+        self.previewContent is LiveFanWidget
+    }
+    
+    fileprivate func interactPreview() {
+        (self.previewContent as? LiveFanWidget)?.previewInteracted()
     }
     
     override func mouseEntered(with: NSEvent) {
         NSCursor.pointingHand.set()
         if !self.state {
-            self.imageView.image = self.rgbImage
-            self.imageView.alphaValue = 0.9
+            if let imageView = self.imageView {
+                imageView.image = self.rgbImage
+            }
+            self.previewContent.alphaValue = 0.9
         }
     }
     
     override func mouseExited(with: NSEvent) {
         NSCursor.arrow.set()
         if !self.state {
-            self.imageView.image = self.grayImage
-            self.imageView.alphaValue = 0.8
+            if let imageView = self.imageView {
+                imageView.image = self.grayImage
+            }
+            self.previewContent.alphaValue = 0.8
         }
     }
 }

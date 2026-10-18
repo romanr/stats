@@ -77,6 +77,13 @@
 			<key>Order</key>
 			<integer>4</integer>
 		</dict>
+		<key>live_fan</key>
+		<dict>
+			<key>Default</key>
+			<false/>
+			<key>Order</key>
+			<integer>5</integer>
+		</dict>
 	</dict>
 	<key>Settings</key>
 	<dict>

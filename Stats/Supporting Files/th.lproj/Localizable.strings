@@ -236,6 +236,7 @@
 "Constant color" = "คงที่"; // translategemma:4b
 "Custom..." = "กำหนดเอง...";
 "Icon widget" = "วิดเจ็ตไอคอน";
+"Live Fan widget" = "Live Fan";
 
 // Module Kit
 "Open module settings" = "เปิดการตั้งค่าโมดูล";
